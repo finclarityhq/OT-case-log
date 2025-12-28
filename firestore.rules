@@ -1,0 +1,137 @@
+/**
+ * Firestore Security Rules for OT Case Log Application
+ *
+ * ## Core Philosophy
+ * This ruleset enforces a strict user-ownership model. All data is considered private and
+ * is partitioned by user ID. A user can only access, modify, or delete their own data.
+ * There is no concept of public or shared data in this model.
+ *
+ * ## Data Structure
+ * The data is organized hierarchically to enforce user ownership at the path level:
+ * - /users/{userId}: Stores a user's profile document.
+ * - /users/{userId}/cases/{caseId}: A subcollection containing all case logs created by that user.
+ * This structure ensures that queries for a user's data are naturally scoped and secure.
+ *
+ * ## Key Security Decisions
+ * - User Isolation: A user's entire data tree (/users/{userId}) is inaccessible to any other user.
+ * - No User Listing: It is not possible to query or list the top-level `/users` collection, preventing user enumeration.
+ * - Default Deny: Access is denied by default. All allowed operations are explicitly granted based on the user's authenticated UID.
+ *
+ * ## Denormalization for Authorization
+ * To ensure fast and simple rules, we enforce relational integrity between the path and the document data.
+ * - A document created at `/users/{userId}` must contain an `id` field equal to `userId`.
+ * - A document created at `/users/{userId}/cases/{caseId}` must contain a `userId` field equal to `userId`.
+ * This consistency is validated on write operations, making read authorization extremely efficient without needing any `get()` calls.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------------------
+
+    /**
+     * Checks if the user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the authenticated user's ID matches the provided userId.
+     * This is the primary function for verifying document ownership.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Checks if a document exists before an update or delete operation.
+     * This prevents unauthorized state changes on non-existent data.
+     */
+    function isExistingDocument() {
+      return resource != null;
+    }
+
+    /**
+     * Combines ownership and existence checks for secure update/delete operations.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && isExistingDocument();
+    }
+
+    /**
+     * Validates required relational fields for a User document on creation.
+     * Ensures the internal `id` field matches the document's path ID.
+     */
+    function hasValidUserDataOnCreate(userId) {
+      return request.resource.data.id == userId;
+    }
+
+    /**
+     * Enforces immutability of the User document's ID on update.
+     * This prevents the core ownership link from being changed after creation.
+     */
+    function isUserIdImmutable() {
+      return request.resource.data.id == resource.data.id;
+    }
+
+    /**
+     * Validates required relational fields for a Case document on creation.
+     * Ensures the internal `userId` field is set correctly to the owner's UID.
+     */
+    function hasValidCaseDataOnCreate(userId) {
+      return request.resource.data.userId == userId;
+    }
+
+    /**
+     * Enforces immutability of a Case document's ownership link on update.
+     * Prevents a case from being reassigned to a different user.
+     */
+    function isCaseOwnerIdImmutable() {
+      return request.resource.data.userId == resource.data.userId;
+    }
+
+
+    // ------------------------------------------------------------------------
+    // Collection Rules
+    // ------------------------------------------------------------------------
+
+    /**
+     * @description Manages user profile documents.
+     * @path /users/{userId}
+     * @allow (get) An authenticated user reads their own profile. `auth.uid: 'user_abc'`, `path: /users/user_abc`
+     * @allow (create) An authenticated user creates their own profile document. `auth.uid: 'user_abc'`, `path: /users/user_abc`
+     * @deny (list) A user attempts to list all documents in the `/users` collection.
+     * @deny (get) A user attempts to read another user's profile. `auth.uid: 'user_abc'`, `path: /users/user_xyz`
+     * @principle Restricts access to a user's own data tree and prevents user enumeration.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) && hasValidUserDataOnCreate(userId);
+      allow update: if isExistingOwner(userId) && isUserIdImmutable();
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Manages individual case logs, which are private to each user.
+     * @path /users/{userId}/cases/{caseId}
+     * @allow (get) An authenticated user reads one of their own case logs. `auth.uid: 'user_abc'`, `path: /users/user_abc/cases/case_123`
+     * @allow (list) An authenticated user lists all of their own case logs. `auth.uid: 'user_abc'`, `path: /users/user_abc/cases`
+     * @allow (create) An authenticated user creates a new case log for themselves. `auth.uid: 'user_abc'`, `path: /users/user_abc/cases/case_123`
+     * @deny (get) A user attempts to read a case log belonging to another user. `auth.uid: 'user_abc'`, `path: /users/user_xyz/cases/case_456`
+     * @principle Enforces strict document ownership within a user's private subcollection.
+     */
+    match /users/{userId}/cases/{caseId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) && hasValidCaseDataOnCreate(userId);
+      allow update: if isExistingOwner(userId) && isCaseOwnerIdImmutable();
+      allow delete: if isExistingOwner(userId);
+    }
+  }
+}

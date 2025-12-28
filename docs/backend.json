@@ -1,0 +1,206 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the OT Case Log application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        }
+      },
+      "required": [
+        "id",
+        "email"
+      ]
+    },
+    "Case": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Case",
+      "type": "object",
+      "description": "Represents a single OT case logged by an anesthesiologist.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the case entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Case)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the surgery.",
+          "format": "date-time"
+        },
+        "otLocation": {
+          "type": "string",
+          "description": "Operating theater or location where the surgery took place."
+        },
+        "electiveOrEmergency": {
+          "type": "boolean",
+          "description": "Indicates whether the surgery was elective or an emergency."
+        },
+        "patientId": {
+          "type": "string",
+          "description": "De-identified patient identifier (e.g., MRN)."
+        },
+        "age": {
+          "type": "number",
+          "description": "Patient's age."
+        },
+        "sex": {
+          "type": "string",
+          "description": "Patient's sex (Male, Female, Other)."
+        },
+        "asaGrade": {
+          "type": "string",
+          "description": "ASA grade of the patient (I-V)."
+        },
+        "comorbidities": {
+          "type": "array",
+          "description": "List of patient comorbidities.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "specialty": {
+          "type": "string",
+          "description": "Surgical specialty (Urology, General Surgery, etc.)."
+        },
+        "surgeryType": {
+          "type": "string",
+          "description": "Type of surgery performed."
+        },
+        "patientPosition": {
+          "type": "string",
+          "description": "Patient position during surgery (Supine, Prone, etc.)."
+        },
+        "primaryTechnique": {
+          "type": "string",
+          "description": "Primary anesthesia technique used (GA, Spinal, etc.)."
+        },
+        "adjuvantsUsed": {
+          "type": "boolean",
+          "description": "Indicates whether adjuvants were used."
+        },
+        "adjuvantDetails": {
+          "type": "string",
+          "description": "Details of adjuvants used, if any."
+        },
+        "blockType": {
+          "type": "string",
+          "description": "Type of regional block used, if applicable."
+        },
+        "blockLevelAndSide": {
+          "type": "string",
+          "description": "Level and side of the regional block, if applicable."
+        },
+        "ultrasoundGuided": {
+          "type": "boolean",
+          "description": "Indicates whether the block was ultrasound guided."
+        },
+        "localAnestheticAndDose": {
+          "type": "string",
+          "description": "Local anesthetic and dose used for the block."
+        },
+        "durationOfAnesthesia": {
+          "type": "number",
+          "description": "Duration of anesthesia in minutes."
+        },
+        "hemodynamicStatus": {
+          "type": "string",
+          "description": "Hemodynamic status during the intraoperative course (Stable, Mild fluctuations, Significant instability)."
+        },
+        "airwayDifficulty": {
+          "type": "boolean",
+          "description": "Indicates whether there was airway difficulty."
+        },
+        "complications": {
+          "type": "array",
+          "description": "List of complications encountered during the case.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "postoperativeAnalgesia": {
+          "type": "string",
+          "description": "Assessment of postoperative analgesia (Adequate/Inadequate)."
+        },
+        "rescueAnalgesiaRequired": {
+          "type": "boolean",
+          "description": "Indicates whether rescue analgesia was required."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional free notes for consultant remarks, teaching points, or audit notes."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "age",
+        "sex",
+        "asaGrade",
+        "surgeryType",
+        "anesthesiaTechnique",
+        "durationOfAnesthesia"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile information. Only the user can read/write their own profile.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/cases/{caseId}",
+        "definition": {
+          "entityName": "Case",
+          "schema": {
+            "$ref": "#/backend/entities/Case"
+          },
+          "description": "Stores OT case logs for each user.  Each case is owned by the user identified by userId.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "caseId",
+              "description": "The unique identifier for the case."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to support a secure and scalable OT Case Log application. The primary goal is to ensure authorization independence and simplify security rules. We leverage path-based ownership and denormalization to achieve this.\n\n1.  **Users Collection:**  The `/users/{userId}` collection stores user profiles.  This collection primarily stores authentication and profile data.\n2.  **Cases Collection:** Each user has a subcollection `/users/{userId}/cases/{caseId}` to store their OT case logs. The `caseId` is a unique identifier for each case. This hierarchical structure ensures that each user can only access their own cases, simplifying security rules.\n\n**Authorization Independence:** To achieve authorization independence, no `get()` calls are needed in the rules. Each case is stored under the user's document, the system authenticates the user via `request.auth.uid` and compares with the `userId` in the path.\n\n**QAPs (Rules are not Filters):** The structure enables secure `list` operations because each user's cases are stored in a dedicated subcollection. Security rules can efficiently check if the requesting user's UID matches the `userId` in the path, preventing unauthorized access to other users' data. The segregation of data by user ensures that listing cases only returns cases belonging to the authenticated user."
+  }
+}
